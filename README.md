@@ -15,9 +15,34 @@ THe reverse proxy is listening on port 80 and 443, getting traffic from my cable
 ```
 <VirtualHost *:80>
  ServerName meshcentral.vinceworks.com
+
+ DocumentRoot "/var/www/meshcentral.vinceworks.com"
+ <Directory "/var/www/meshcentral.vinceworks.com">
+   Allow from All
+ </Directory>
+
+
+ <Location "/.well-known/">
+   Require all granted
+   Options Indexes
+   ProxyPass "!"
+ </Location>
+
+ <Location "/">
+  ProxyPass "http://192.168.254.64:4430/"
+  RewriteEngine on
+  RewriteCond %{SERVER_NAME} =meshcentral.vinceworks.com
+  ReWriteRule ^ https://meshcentral.vinceworks.com%{REQUEST_URI} [END,QSA,R=permanent]
+
+ </Location>
+
  ProxyPreserveHost On
- ProxyPass / http://192.168.100.174:30140/
- ProxyPassReverse / http://192.168.100.174:30140/
+ ProxyPassReverse "/" "http://192.168.254.64:4430/"
+
+ ErrorLog logs/meshcentral.vinceworks.com-error_log
+ CustomLog logs/meshcentral.vinceworks.com-access_log combined
+
+
 </VirtualHost>
 ```
 In this particular case, the ProxyPass/ProxyPassReverse directives are forwarding the traffic to my backend system.
@@ -38,23 +63,22 @@ I need to make a virtual host configuration for each of my many services.  I am 
  ...
  ```
  
- From the redirects above, the apache virtual server meshcentral.vinceworks.com:443 terminates the SSL and redirects the web traffic to my backend on my home LAN http://192.168.100.174:30140/.  This final redirection is done by the ProxyPass/ProxyPassReserve commands and completes the reverse proxy function.
+ From the redirects above, the apache virtual server meshcentral.vinceworks.com:443 terminates the SSL and redirects the web traffic to my backend on my home LAN http://192.168.254.64:4430/.  This final redirection is done by the ProxyPass/ProxyPassReserve commands and completes the reverse proxy function.
  
 # certificates from Lets Encrypt using certbot client
 I use the cerbot client to create the certificates for meshcentral.vinceworks.com.  To do that, I choose to use the webroot plugin.  This lets me create and renew the certificate by using a path within the website to support the handshake with the Let's Encrypt server:  meshcentral.vinceworks.com/.well-known/acme-challenge. The certbot tool temporarily stores some credentials there and the server gets them to verify that the person running the certbot tool has control of the website.  
 
 Here's an example certbot execution:
 ```
-[root@dell1 sites-enabled]# certbot certonly --cert-name meshcentral.vinceworks.com --webroot -w /var/lib/letsencrypt/http_ch
-allenges/meshcentral.vinceworks.com -d meshcentral.vinceworks.com --dry-run
+[root@dell1 sites-enabled]# certbot certonly --cert-name meshcentral.vinceworks.com --webroot -w /var/www/meshcentral.vinceworks.com -d meshcentral.vinceworks.com --dry-run
 Saving debug log to /var/log/letsencrypt/letsencrypt.log
 Plugins selected: Authenticator webroot, Installer None
 Starting new HTTPS connection (1): acme-staging-v02.api.letsencrypt.org
 Cert not due for renewal, but simulating renewal for dry run
-Simulating renewal of an existing certificate for meshcentral.vinceworks.com and www.meshcentral.vinceworks.com
+Simulating renewal of an existing certificate for meshcentral.vinceworks.com
 Performing the following challenges:
 http-01 challenge for meshcentral.vinceworks.com
-Using the webroot path /var/lib/letsencrypt/http_challenges/meshcentral.vinceworks.com for all unmatched domains.
+Using the webroot path /var/www/meshcentral.vinceworks.com for all unmatched domains.
 Waiting for verification...
 Cleaning up challenges
 
@@ -67,138 +91,121 @@ Note: the certificate for meshcentral.vinceworks.com.  Also note the above comma
 
 For this to work I setup a webroot path to an existing letsencrypt directory on the reverse proxy server.  The real web server is inside my backend.  To make this work, I need to expand the virtual server definition to map .well-known/acme-challenge to a local directory and not let the reverse proxy forward the traffic.  See the additional configuration file directives:
 ```
- DocumentRoot /var/lib/letsencrypt/http_challenges/meshcentral.vinceworks.com
-  <Directory /var/lib/letsencrypt/http_challenges/meshcentral.vinceworks.com>
-          Allow from All
-  </Directory>
-  <Location /.well-known/acme-challenge>
-      Require all granted
-      Options Indexes
-  </Location>
- ...
+<VirtualHost *:80>
+ ServerName meshcentral.vinceworks.com
+
+ DocumentRoot "/var/www/meshcentral.vinceworks.com"
+ <Directory "/var/www/meshcentral.vinceworks.com">
+   Allow from All
+ </Directory>
+
+
+ <Location "/.well-known/">
+   Require all granted
+   Options Indexes
+   ProxyPass "!"
+ </Location>
+
+ <Location "/">
+  ProxyPass "http://192.168.254.64:4430/"
+  RewriteEngine on
+  RewriteCond %{SERVER_NAME} =meshcentral.vinceworks.com
+  ReWriteRule ^ https://meshcentral.vinceworks.com%{REQUEST_URI} [END,QSA,R=permanent]
+
+ </Location>
+
  ProxyPreserveHost On
- ProxyPass /.well-known !
- ProxyPass / http://192.168.100.174:30140/
- ProxyPassReverse / http://192.168.100.174:30140/
+ ProxyPassReverse "/" "http://192.168.254.64:4430/"
+
+ ErrorLog logs/meshcentral.vinceworks.com-error_log
+ CustomLog logs/meshcentral.vinceworks.com-access_log combined
+
+
+</VirtualHost>
  ...
 ```
 
-The certbot -w /var/lib/letsencrypt/http_challenges/meshcentral.vinceworks.com command line option tells certbot where the put the temporary creditials. The DocumentRoot directive tells the apache httpd where the root of the webserver is stored and where one can find the .well-known/acme-challenge directory.
+The certbot -w /var/www/meshcentral.vinceworks.com command line option tells certbot where the put the temporary creditials. The DocumentRoot directive tells the apache httpd where the root of the webserver is stored and where one can find the .well-known/acme-challenge directory.
 
 # Final configuration files
 ## meshcentral.vinceworks.com-le-ssl.conf
 ```
-[root@dell1 sites-enabled]# cat proxy.napervilleweather.com-le-ssl.conf
+[root@dell1 sites-enabled]# cat meshcentral.vinceworks.com-le-ssl.conf
 <IfModule mod_ssl.c>
 <VirtualHost *:443>
- ServerName napervilleweather.com
- ServerAlias www.napervilleweather.com
+  ServerName meshcentral.vinceworks.com
 
- DocumentRoot /var/lib/letsencrypt/http_challenges/napervilleweather.com
-  <Directory /var/lib/letsencrypt/http_challenges/napervilleweather.com>
-          Allow from All
+  DocumentRoot "/var/www/meshcentral.vinceworks.com"
+  <Directory "/var/www/meshcentral.vinceworks.com">
+    Allow from All
   </Directory>
-  <Location /.well-known/acme-challenge>
-      Require all granted
-      Options Indexes
+
+  <Location /.well-known/>
+    Require all granted
+    Options Indexes
   </Location>
 
- RewriteEngine on
- RewriteCond %{SERVER_NAME} =www.napervilleweather.com
- ReWriteRule ^ https://napervilleweather.com%{REQUEST_URI} [END,QSA,R=permanent]
-
  ProxyPreserveHost On
- ProxyPass /.well-known !
- ProxyPass / http://192.168.100.174:30140/
- ProxyPassReverse / http://192.168.100.174:30140/
+ ProxyPassReverse / http://192.168.254.64:4430/
 
-   ErrorLog logs/napervilleweather.com-error_log
-   CustomLog logs/napervilleweather.com-access_log combined
+ RewriteEngine on
+ RewriteCond %{SERVER_NAME} =meshcentral.vinceworks.com
+ ReWriteRule ^ https://meshcentral.vinceworks.com%{REQUEST_URI} [END,QSA,R=permanent]
 
-SSLCertificateFile /etc/letsencrypt/live/napervilleweather.com/cert.pem
-SSLCertificateKeyFile /etc/letsencrypt/live/napervilleweather.com/privkey.pem
-Include /etc/letsencrypt/options-ssl-apache.conf
-SSLCertificateChainFile /etc/letsencrypt/live/napervilleweather.com/chain.pem
+ #Header always set Strict-Transport-Security "max-age=2592000; includeSubDomains; preload" env=HTTPS
+ Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" env=HTTPS
+ Header always set X-Content-Type-Options "nosniff"
+
+ ErrorLog logs/meshcentral.vinceworks.com-error_log
+ CustomLog logs/meshcentral.vinceworks.com-access_log combined
+
+ SSLCertificateFile /etc/letsencrypt/live/meshcentral.vinceworks.com/cert.pem
+ SSLCertificateKeyFile /etc/letsencrypt/live/meshcentral.vinceworks.com/privkey.pem
+ Include /etc/letsencrypt/options-ssl-apache.conf
+ SSLCertificateChainFile /etc/letsencrypt/live/meshcentral.vinceworks.com/chain.pem
+
 </VirtualHost>
 </IfModule>
+
 [root@dell1 sites-enabled]#
 ```
-## proxy.napervilleweather.com.conf
+## meshcentral.vinceworks.com.conf
 ```
-[root@dell1 sites-enabled]# cat proxy.napervilleweather.com.conf
+[root@dell1 sites-enabled]# cat meshcentral.vinceworks.com.conf
 <VirtualHost *:80>
- ServerName napervilleweather.com
- ServerAlias www.napervilleweather.com
+ ServerName meshcentral.vinceworks.com
 
- DocumentRoot /var/lib/letsencrypt/http_challenges/napervilleweather.com
-  <Directory /var/lib/letsencrypt/http_challenges/napervilleweather.com>
-          Allow from All
-  </Directory>
-  <Location /.well-known/acme-challenge>
-      Require all granted
-      Options Indexes
-  </Location>
+ DocumentRoot "/var/www/meshcentral.vinceworks.com"
+ <Directory "/var/www/meshcentral.vinceworks.com">
+   Allow from All
+ </Directory>
 
- RewriteEngine on
- RewriteCond %{SERVER_NAME} =www.napervilleweather.com [OR]
- RewriteCond %{SERVER_NAME} =napervilleweather.com
- ReWriteRule ^ https://napervilleweather.com%{REQUEST_URI} [END,QSA,R=permanent]
+
+ <Location "/.well-known/">
+   Require all granted
+   Options Indexes
+   ProxyPass "!"
+ </Location>
+
+ <Location "/">
+  ProxyPass "http://192.168.254.64:4430/"
+  RewriteEngine on
+  RewriteCond %{SERVER_NAME} =meshcentral.vinceworks.com
+  ReWriteRule ^ https://meshcentral.vinceworks.com%{REQUEST_URI} [END,QSA,R=permanent]
+
+ </Location>
 
  ProxyPreserveHost On
- ProxyPass /.well-known !
- ProxyPass / http://192.168.100.174:30140/
- ProxyPassReverse / http://192.168.100.174:30140/
-   ErrorLog logs/napervilleweather.com-error_log
-   CustomLog logs/napervilleweather.com-access_log combined
+ ProxyPassReverse "/" "http://192.168.254.64:4430/"
+
+ ErrorLog logs/meshcentral.vinceworks.com-error_log
+ CustomLog logs/meshcentral.vinceworks.com-access_log combined
 
 
-#RewriteEngine on
-#RewriteCond %{SERVER_NAME} =napervilleweather.com
-#RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]
-#RewriteRule ^ https://napervilleweather.com%{REQUEST_URI} [END,NE,R=permanent]
 </VirtualHost>
 [root@dell1 sites-enabled]#
 ```
-# napervilleweather.net certbot
-I did the same thing for napervilleweather.net.  Here's the certbot execution run on my reverse proxy server as root:
-```
-[root@dell1 logs]# certbot certonly --cert-name napervilleweather.net --webroot -w /var/lib/letsencrypt/http_challenges/napervilleweather.net -d napervilleweather.net -d www.napervilleweather.net
-Saving debug log to /var/log/letsencrypt/letsencrypt.log
-Plugins selected: Authenticator webroot, Installer None
-Starting new HTTPS connection (1): acme-v02.api.letsencrypt.org
 
-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-You are updating certificate napervilleweather.net to include new domain(s):
-+ www.napervilleweather.net
-
-You are also removing previously included domain(s):
-(None)
-
-Did you intend to make this change?
-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-(U)pdate certificate/(C)ancel: U
-Renewing an existing certificate for napervilleweather.net and www.napervilleweather.net
-Performing the following challenges:
-http-01 challenge for www.napervilleweather.net
-Using the webroot path /var/lib/letsencrypt/http_challenges/napervilleweather.net for all unmatched domains.
-Waiting for verification...
-Cleaning up challenges
-
-IMPORTANT NOTES:
- - Congratulations! Your certificate and chain have been saved at:
-   /etc/letsencrypt/live/napervilleweather.net/fullchain.pem
-   Your key file has been saved at:
-   /etc/letsencrypt/live/napervilleweather.net/privkey.pem
-   Your certificate will expire on 2022-04-25. To obtain a new or
-   tweaked version of this certificate in the future, simply run
-   certbot again. To non-interactively renew *all* of your
-   certificates, run "certbot renew"
- - If you like Certbot, please consider supporting our work by:
-
-   Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
-   Donating to EFF:                    https://eff.org/donate-le
-   
-```   
 # New ISP, no Port 80 Access
 My ISP was bought by another company. My port 80 based webpages are blocked, by network management policy. But port 443 works just fine. So I need to get a new certificate, but I cannot use http-01 challenges to verify my domain name ownership.  Thus I am using the certbot's DNS Validation option.  Here's the command I used to get jackkozik.com validated:
 ```
