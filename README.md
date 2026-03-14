@@ -4,76 +4,57 @@ For my home network, I have only one IP address and therefore one port 80/443 fo
 
 The reverse proxy needs to do the following steps:
 - Define a virtual host per application and redirect it to the internal server and port number
-- Redirect www to non-www (www.example.com -> example.com)
 - Map http requests to https
 - Use certbot to get and renew certificates from [Let's Encrypt](https://letsencrypt.org/)
 
 I have an existing Apache httpd server -- I am adding the reverse proxy function to it as a series of proxy.appname.conf files. The way reverse proxys work, I cannot redirect an https requests.  I must terminate the SSL at the reverse proxy and forward the traffic to it on port 80.
 
 # Apache-based Reverse Proxy Virtual Hosts
-THe reverse proxy is listening on port 80 and 443, getting traffic from my cable-modem/home router.  Apache httpd takes the incoming packets and maps them to virtual hosts, in this case, based on host name.  The [ProxyPass directive ](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html#proxypass) invokes a reverse proxy function and redirects the traffic. Here's a very simple example for my weather web page http://napervilleweather.com.
+THe reverse proxy is listening on port 80 and 443, getting traffic from my cable-modem/home router.  Apache httpd takes the incoming packets and maps them to virtual hosts, in this case, based on host name.  The [ProxyPass directive ](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html#proxypass) invokes a reverse proxy function and redirects the traffic. Here's a very simple example for my web page http://meshcentral.vinceworks.com.
 
 ```
 <VirtualHost *:80>
- ServerName napervilleweather.com
- ServerAlias www.napervilleweather.com
+ ServerName meshcentral.vinceworks.com
  ProxyPreserveHost On
  ProxyPass / http://192.168.100.174:30140/
  ProxyPassReverse / http://192.168.100.174:30140/
 </VirtualHost>
 ```
-In this particular case, the ProxyPass/ProxyPassReverse directives are forwarding the traffic to my kubernetes cluster.  
+In this particular case, the ProxyPass/ProxyPassReverse directives are forwarding the traffic to my backend system.
 
 I need to make a virtual host configuration for each of my many services.  I am just showing one example.
-
-# Redirect www to non-www
-I have decided that I want to force all services to redirect to a URL without the www prefix.  That is www.napervilleweather.com -> napervilleweather.com.
-Apache httpd [rewrite engine](https://httpd.apache.org/docs/2.4/rewrite/intro.html) can do this. [See example.](https://www.digitalocean.com/community/tutorials/how-to-redirect-www-to-non-www-with-apache-on-centos-7).  Here's how the virtual host configuration file changes
-```
-...
- RewriteEngine on
- RewriteCond %{SERVER_NAME} =www.napervilleweather.com
- ReWriteRule ^ http://napervilleweather.com%{REQUEST_URI} [END,QSA,R=permanent]
- ...
- ```
- I am pretty sure the rewrite rules get run before the ProxyPass ones. 
  
  # Redirect http to https
  
  I am also redirecting http to https. In summary, 
- - http://napervilleweather.com -> https://napervilleweather.com
- - http://www.napervilleweather.com -> https://napervilleweather.com
- - https://www.napervilleweather.com -> https://napervilleweather.com
+ - http://meshcentral.vinceworks.com -> https://meshcentral.vinceworks.com
 
  Thus the apache httpd configuration file changes
  ```
  ...
  RewriteEngine on
- RewriteCond %{SERVER_NAME} =www.napervilleweather.com [OR]
- RewriteCond %{SERVER_NAME} =napervilleweather.com
- ReWriteRule ^ https://napervilleweather.com%{REQUEST_URI} [END,QSA,R=permanent]
+ RewriteCond %{SERVER_NAME} =meshcentral.vinceworks.com
+ ReWriteRule ^ https:/meshcentral.vinceworks.com%{REQUEST_URI} [END,QSA,R=permanent]
  ...
  ```
  
- 
- From the redirects above, the apache virtual server napervilleweather.com:443 terminates the SSL and redirects the web traffic to my kubernetes cluster on my home LAN http://192.168.100.174:30140/.  This final redirection is done by the ProxyPass/ProxyPassReserve commands and completes the reverse proxy function.
+ From the redirects above, the apache virtual server meshcentral.vinceworks.com:443 terminates the SSL and redirects the web traffic to my backend on my home LAN http://192.168.100.174:30140/.  This final redirection is done by the ProxyPass/ProxyPassReserve commands and completes the reverse proxy function.
  
 # certificates from Lets Encrypt using certbot client
-I use the cerbot client to create the certificates for napervilleweather.com.  To do that, I choose to use the webroot plugin.  This lets me create and renew the certificate by using a path within the website to support the handshake with the Let's Encrypt server:  napervilleweather.com/.well-known/acme-challenge. The certbot tool temporarily stores some credentials there and the server gets them to verify that the person running the certbot tool has control of the website.  
+I use the cerbot client to create the certificates for meshcentral.vinceworks.com.  To do that, I choose to use the webroot plugin.  This lets me create and renew the certificate by using a path within the website to support the handshake with the Let's Encrypt server:  meshcentral.vinceworks.com/.well-known/acme-challenge. The certbot tool temporarily stores some credentials there and the server gets them to verify that the person running the certbot tool has control of the website.  
 
 Here's an example certbot execution:
 ```
-[root@dell1 sites-enabled]# certbot certonly --cert-name napervilleweather.com --webroot -w /var/lib/letsencrypt/http_ch
-allenges/napervilleweather.com -d napervilleweather.com -d www.napervilleweather.com --dry-run
+[root@dell1 sites-enabled]# certbot certonly --cert-name meshcentral.vinceworks.com --webroot -w /var/lib/letsencrypt/http_ch
+allenges/meshcentral.vinceworks.com -d meshcentral.vinceworks.com --dry-run
 Saving debug log to /var/log/letsencrypt/letsencrypt.log
 Plugins selected: Authenticator webroot, Installer None
 Starting new HTTPS connection (1): acme-staging-v02.api.letsencrypt.org
 Cert not due for renewal, but simulating renewal for dry run
-Simulating renewal of an existing certificate for napervilleweather.com and www.napervilleweather.com
+Simulating renewal of an existing certificate for meshcentral.vinceworks.com and www.meshcentral.vinceworks.com
 Performing the following challenges:
-http-01 challenge for napervilleweather.com
-http-01 challenge for www.napervilleweather.com
-Using the webroot path /var/lib/letsencrypt/http_challenges/napervilleweather.com for all unmatched domains.
+http-01 challenge for meshcentral.vinceworks.com
+Using the webroot path /var/lib/letsencrypt/http_challenges/meshcentral.vinceworks.com for all unmatched domains.
 Waiting for verification...
 Cleaning up challenges
 
@@ -82,12 +63,12 @@ IMPORTANT NOTES:
 [root@dell1 sites-enabled]#
 ```
 
-Note: the certificate for napervilleweather.com also includes www.napervilleweather.com.  Also note the above command was run as "dry-run".
+Note: the certificate for meshcentral.vinceworks.com.  Also note the above command was run as "dry-run".
 
-For this to work I setup a webroot path to an existing letsencrypt directory on the reverse proxy server.  The real web server is inside my kubernetes cluster.  To make this work, I need to expand the virtual server definition to map .well-known/acme-challenge to a local directory and not let the reverse proxy forward the traffic.  See the additional configuration file directives:
+For this to work I setup a webroot path to an existing letsencrypt directory on the reverse proxy server.  The real web server is inside my backend.  To make this work, I need to expand the virtual server definition to map .well-known/acme-challenge to a local directory and not let the reverse proxy forward the traffic.  See the additional configuration file directives:
 ```
- DocumentRoot /var/lib/letsencrypt/http_challenges/napervilleweather.com
-  <Directory /var/lib/letsencrypt/http_challenges/napervilleweather.com>
+ DocumentRoot /var/lib/letsencrypt/http_challenges/meshcentral.vinceworks.com
+  <Directory /var/lib/letsencrypt/http_challenges/meshcentral.vinceworks.com>
           Allow from All
   </Directory>
   <Location /.well-known/acme-challenge>
@@ -102,10 +83,10 @@ For this to work I setup a webroot path to an existing letsencrypt directory on 
  ...
 ```
 
-The certbot -w /var/lib/letsencrypt/http_challenges/napervilleweather.com command line option tells certbot where the put the temporary creditials. The DocumentRoot directive tells the apache httpd where the root of the webserver is stored and where one can find the .well-known/acme-challenge directory.
+The certbot -w /var/lib/letsencrypt/http_challenges/meshcentral.vinceworks.com command line option tells certbot where the put the temporary creditials. The DocumentRoot directive tells the apache httpd where the root of the webserver is stored and where one can find the .well-known/acme-challenge directory.
 
 # Final configuration files
-## proxy.napervilleweather.com-le-ssl.conf
+## meshcentral.vinceworks.com-le-ssl.conf
 ```
 [root@dell1 sites-enabled]# cat proxy.napervilleweather.com-le-ssl.conf
 <IfModule mod_ssl.c>
